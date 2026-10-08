@@ -510,4 +510,68 @@ app.delete('/api/menu/:id', (req, res) => {
 
 // Orders
 app.get('/api/orders/:room_id', (req, res) => {
-    pool.query(`SELECT o.id, m.item_name, m.category, m.
+    pool.query(`SELECT o.id, m.item_name, m.category, m.unit, o.quantity, o.total_price FROM orders o JOIN menu m ON o.item_id = m.id WHERE o.room_id = $1`, [req.params.id], (err, result) => {
+        res.json(result.rows || []);
+    });
+});
+
+app.post('/api/orders/add', (req, res) => {
+    const { room_id, item_id, quantity } = req.body;
+    pool.query(`SELECT price FROM menu WHERE id = $1`, [item_id], (err, result) => {
+        const item = result.rows[0];
+        if (!item) return res.status(404).json({ error: 'Món ăn không tồn tại!' });
+        const total_price = item.price * quantity;
+        pool.query(`INSERT INTO orders (room_id, item_id, quantity, total_price) VALUES ($1, $2, $3, $4)`, [room_id, item_id, quantity, total_price], () => {
+            res.json({ success: true });
+        });
+    });
+});
+
+app.delete('/api/orders/:id', (req, res) => {
+    pool.query(`DELETE FROM orders WHERE id = $1`, [req.params.id], () => res.json({ success: true }));
+});
+
+// Quản lý Kho (Inventory)
+app.get('/api/inventory', (req, res) => {
+    pool.query(`SELECT * FROM inventory ORDER BY id`, (err, result) => res.json(result.rows || []));
+});
+
+app.post('/api/inventory/save', (req, res) => {
+    const { id, item_name, category, quantity, unit, import_price, import_date } = req.body;
+    if (id) {
+        pool.query(`UPDATE inventory SET item_name = $1, category = $2, quantity = $3, unit = $4, import_price = $5, import_date = $6 WHERE id = $7`,
+            [item_name, category, quantity || 0, unit, import_price || 0, import_date, id], () => res.json({ success: true }));
+    } else {
+        pool.query(`INSERT INTO inventory (item_name, category, quantity, unit, import_price, import_date) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [item_name, category, quantity || 0, unit, import_price || 0, import_date], () => res.json({ success: true }));
+    }
+});
+
+app.delete('/api/inventory/:id', (req, res) => {
+    pool.query(`DELETE FROM inventory WHERE id = $1`, [req.params.id], () => res.json({ success: true }));
+});
+
+// Quản lý Chi phí khác (Expenses)
+app.get('/api/expenses', (req, res) => {
+    pool.query(`SELECT * FROM expenses ORDER BY id DESC`, (err, result) => res.json(result.rows || []));
+});
+
+app.post('/api/expenses/save', (req, res) => {
+    const { id, category, amount, note, date } = req.body;
+    if (id) {
+        pool.query(`UPDATE expenses SET category = $1, amount = $2, note = $3, date = $4 WHERE id = $5`,
+            [category, amount || 0, note, date, id], () => res.json({ success: true }));
+    } else {
+        pool.query(`INSERT INTO expenses (category, amount, note, date) VALUES ($1, $2, $3, $4)`,
+            [category, amount || 0, note, date], () => res.json({ success: true }));
+    }
+});
+
+app.delete('/api/expenses/:id', (req, res) => {
+    pool.query(`DELETE FROM expenses WHERE id = $1`, [req.params.id], () => res.json({ success: true }));
+});
+
+// Khởi chạy Server
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
