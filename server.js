@@ -115,7 +115,7 @@ async function initDB() {
             created_date TEXT
         )`);
 
-        // Seed dữ liệu mặc định nếu bảng users trống
+        // Seed dữ liệu mẫu nếu bảng users trống
         const userCountRes = await pool.query(`SELECT COUNT(*) as count FROM users`);
         if (parseInt(userCountRes.rows[0].count) === 0) {
             await pool.query(`INSERT INTO users (username, password, role) VALUES ('admin', '123456', 'admin')`);
@@ -180,7 +180,7 @@ app.get('/api/users', (req, res) => {
 
 app.post('/api/users/save', (req, res) => {
     const { id, username, password, role } = req.body;
-    if(id) {
+    if (id) {
         pool.query(`UPDATE users SET username = $1, password = $2, role = $3 WHERE id = $4`, [username, password, role, id], (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
@@ -271,7 +271,7 @@ app.post('/api/rooms/book', (req, res) => {
     });
 });
 
-// Tính tiền bàn
+// Tính tiền bàn (Áp dụng giảm giá % khuyến mãi)
 app.post('/api/rooms/checkout', (req, res) => {
     const { room_id } = req.body;
     pool.query(`SELECT * FROM settings LIMIT 1`, (err, settingRes) => {
@@ -397,7 +397,7 @@ app.post('/api/admin/online-orders/checkout', (req, res) => {
     });
 });
 
-// Danh sách hóa đơn
+// Danh sách hóa đơn & In lại bill
 app.get('/api/bills', (req, res) => {
     const { start_date, end_date } = req.query;
     let query = `SELECT * FROM bills`;
@@ -556,7 +556,7 @@ app.get('/api/menu', (req, res) => {
 
 app.post('/api/menu/save', (req, res) => {
     const { id, item_name, category, unit, import_price, price } = req.body;
-    if(id) {
+    if (id) {
         pool.query(`UPDATE menu SET item_name = $1, category = $2, unit = $3, import_price = $4, price = $5 WHERE id = $6`, 
             [item_name, category, unit, import_price || 0, price, id], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
@@ -578,27 +578,30 @@ app.delete('/api/menu/:id', (req, res) => {
     });
 });
 
-// Orders
+// Orders (Hỗ trợ cả route /api/orders và /api/orders/add)
 app.get('/api/orders/:room_id', (req, res) => {
-    pool.query(`SELECT o.id, m.item_name, m.category, m.unit, o.quantity, o.total_price FROM orders o JOIN menu m ON o.item_id = m.id WHERE o.room_id = $1`, [req.params.id], (err, result) => {
+    pool.query(`SELECT o.id, m.item_name, m.category, m.unit, o.quantity, o.total_price FROM orders o JOIN menu m ON o.item_id = m.id WHERE o.room_id = $1`, [req.params.room_id], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(result.rows || []);
     });
 });
 
-app.post('/api/orders/add', (req, res) => {
+const handleAddOrder = (req, res) => {
     const { room_id, item_id, quantity } = req.body;
     pool.query(`SELECT price FROM menu WHERE id = $1`, [item_id], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         const item = result.rows[0];
-        if (!item) return res.status(404).json({ error: 'Món ăn không tồn tại!' });
+        if (!item) return res.status(400).json({ error: 'Món không tồn tại' });
         const total_price = item.price * quantity;
         pool.query(`INSERT INTO orders (room_id, item_id, quantity, total_price) VALUES ($1, $2, $3, $4)`, [room_id, item_id, quantity, total_price], (err2) => {
             if (err2) return res.status(500).json({ error: err2.message });
             res.json({ success: true });
         });
     });
-});
+};
+
+app.post('/api/orders', handleAddOrder);
+app.post('/api/orders/add', handleAddOrder);
 
 app.delete('/api/orders/:id', (req, res) => {
     pool.query(`DELETE FROM orders WHERE id = $1`, [req.params.id], (err) => {
@@ -607,7 +610,7 @@ app.delete('/api/orders/:id', (req, res) => {
     });
 });
 
-// Quản lý Kho (Inventory)
+// Inventory (Hỗ trợ đầy đủ logic nhập kho + tự động đồng bộ vào Menu như server1.js)
 app.get('/api/inventory', (req, res) => {
     pool.query(`SELECT * FROM inventory ORDER BY id`, (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -615,7 +618,25 @@ app.get('/api/inventory', (req, res) => {
     });
 });
 
-app.post('/api/inventory/save', (req, res) => {
+app.post('/api/inventory', async (req, res) => {
+    const { item_name, category, quantity, unit, import_price, import_date } = req.body;
+    try {
+        await pool.query(`INSERT INTO inventory (item_name, category, quantity, unit, import_price, import_date) VALUES ($1, $2, $3, $4, $5, $6)`, 
+            [item_name, category, quantity, unit, import_price, import_date || new Date().toISOString().split('T')[0]]);
+        
+        const menuCheck = await pool.query(`SELECT * FROM menu WHERE item_name = $1`, [item_name]);
+        if (menuCheck.rows.length === 0) {
+            const sellPrice = import_price * 1.3;
+            await pool.query(`INSERT INTO menu (item_name, category, unit, import_price, price) VALUES ($1, $2, $3, $4, $5)`, 
+                [item_name, category, unit, import_price, sellPrice]);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/inventory/save', async (req, res) => {
     const { id, item_name, category, quantity, unit, import_price, import_date } = req.body;
     if (id) {
         pool.query(`UPDATE inventory SET item_name = $1, category = $2, quantity = $3, unit = $4, import_price = $5, import_date = $6 WHERE id = $7`,
@@ -624,12 +645,30 @@ app.post('/api/inventory/save', (req, res) => {
                 res.json({ success: true });
             });
     } else {
-        pool.query(`INSERT INTO inventory (item_name, category, quantity, unit, import_price, import_date) VALUES ($1, $2, $3, $4, $5, $6)`,
-            [item_name, category, quantity || 0, unit, import_price || 0, import_date], (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
-            });
+        // Tương thích cả phương thức save mới nhưng vẫn giữ logic kiểm tra menu
+        try {
+            await pool.query(`INSERT INTO inventory (item_name, category, quantity, unit, import_price, import_date) VALUES ($1, $2, $3, $4, $5, $6)`,
+                [item_name, category, quantity || 0, unit, import_price || 0, import_date || new Date().toISOString().split('T')[0]]);
+            
+            const menuCheck = await pool.query(`SELECT * FROM menu WHERE item_name = $1`, [item_name]);
+            if (menuCheck.rows.length === 0) {
+                const sellPrice = (import_price || 0) * 1.3;
+                await pool.query(`INSERT INTO menu (item_name, category, unit, import_price, price) VALUES ($1, $2, $3, $4, $5)`, 
+                    [item_name, category, unit, import_price || 0, sellPrice]);
+            }
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
     }
+});
+
+app.post('/api/inventory/update', (req, res) => {
+    const { id, quantity, import_price } = req.body;
+    pool.query(`UPDATE inventory SET quantity = $1, import_price = $2 WHERE id = $3`, [quantity, import_price, id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
 });
 
 app.delete('/api/inventory/:id', (req, res) => {
@@ -639,7 +678,7 @@ app.delete('/api/inventory/:id', (req, res) => {
     });
 });
 
-// Quản lý Chi phí khác (Expenses)
+// Expenses
 app.get('/api/expenses', (req, res) => {
     pool.query(`SELECT * FROM expenses ORDER BY id DESC`, (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -647,7 +686,7 @@ app.get('/api/expenses', (req, res) => {
     });
 });
 
-app.post('/api/expenses/save', (req, res) => {
+const handleSaveExpense = (req, res) => {
     const { id, category, amount, note, date } = req.body;
     if (id) {
         pool.query(`UPDATE expenses SET category = $1, amount = $2, note = $3, date = $4 WHERE id = $5`,
@@ -657,12 +696,15 @@ app.post('/api/expenses/save', (req, res) => {
             });
     } else {
         pool.query(`INSERT INTO expenses (category, amount, note, date) VALUES ($1, $2, $3, $4)`,
-            [category, amount || 0, note, date], (err) => {
+            [category, amount || 0, note, date || new Date().toISOString().split('T')[0]], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({ success: true });
             });
     }
-});
+};
+
+app.post('/api/expenses', handleSaveExpense);
+app.post('/api/expenses/save', handleSaveExpense);
 
 app.delete('/api/expenses/:id', (req, res) => {
     pool.query(`DELETE FROM expenses WHERE id = $1`, [req.params.id], (err) => {
