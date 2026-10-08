@@ -11,12 +11,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Kết nối PostgreSQL (Supabase) qua biến môi trường DATABASE_URL trên Render
+// Kết nối PostgreSQL (Supabase Session Pooler cổng 6543, ép IPv4 với family: 4)
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres.zvqmptcxkmoxkkrpepbk:%5BDIepNN%402024%5D@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres',
     ssl: {
-        rejectUnauthorized: false // Bắt buộc khi kết nối Supabase từ Render
-    }
+        rejectUnauthorized: false
+    },
+    family: 4 // Ép buộc sử dụng IPv4 để tránh lỗi ENETUNREACH trên Render
 });
 
 // Khởi tạo cơ sở dữ liệu và bảng dữ liệu mẫu
