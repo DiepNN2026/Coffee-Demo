@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const path = require('path');
 const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -486,8 +487,8 @@ app.get('/api/reports/revenue', (req, res) => {
     });
 });
 
-// Xuất file Excel .xlsx với định dạng đóng khung border đầy đủ
-app.get('/api/reports/export-excel', (req, res) => {
+// Xuất file Excel .xlsx sử dụng exceljs để đóng khung viền chắc chắn
+app.get('/api/reports/export-excel', async (req, res) => {
     const { start_date, end_date } = req.query;
     let billQuery = `SELECT * FROM bills`;
     let expQuery = `SELECT * FROM expenses`;
@@ -499,132 +500,110 @@ app.get('/api/reports/export-excel', (req, res) => {
         params = [start_date, end_date];
     }
 
-    pool.query(billQuery, params, (err, billRes) => {
-        if (err) return res.status(500).json({ error: err.message });
-        pool.query(expQuery, params, (err2, expRes) => {
-            if (err2) return res.status(500).json({ error: err2.message });
-            pool.query(`SELECT * FROM inventory`, (err3, invRes) => {
-                if (err3) return res.status(500).json({ error: err3.message });
-                const bills = billRes.rows || [];
-                const expenses = expRes.rows || [];
-                const inventory = invRes.rows || [];
+    try {
+        const billRes = await pool.query(billQuery, params);
+        const expRes = await pool.query(expQuery, params);
+        const invRes = await pool.query(`SELECT * FROM inventory`);
 
-                const totalRev = bills.reduce((s, b) => s + b.grand_total, 0);
-                const totalImport = bills.reduce((s, b) => s + b.total_import_cost, 0);
-                const totalExpRecord = expenses.reduce((s, e) => s + e.amount, 0);
-                const totalInventoryCost = inventory.reduce((s, i) => s + ((i.quantity || 0) * (i.import_price || 0)), 0);
-                const totalExp = totalExpRecord + totalInventoryCost;
-                const netProfit = (totalRev - totalImport) - totalExp;
+        const bills = billRes.rows || [];
+        const expenses = expRes.rows || [];
+        const inventory = invRes.rows || [];
 
-                const wsTongQuatData = [
-                    ["Báo cáo tổng quát doanh thu"],
-                    ["Từ ngày:", start_date || "Tất cả", "Đến ngày:", end_date || "Tất cả"],
-                    [],
-                    ["Chỉ tiêu", "Số tiền (VNĐ)"],
-                    ["Tổng Doanh Thu", totalRev],
-                    ["Tổng Giá Vốn", totalImport],
-                    ["Tổng Chi Phí (Gồm Chi Phí + Tồn Kho)", totalExp],
-                    ["Lợi Nhuận Ròng", netProfit],
-                    [],
-                    ["Tổng", "", totalRev]
-                ];
+        const totalRev = bills.reduce((s, b) => s + b.grand_total, 0);
+        const totalImport = bills.reduce((s, b) => s + b.total_import_cost, 0);
+        const totalExpRecord = expenses.reduce((s, e) => s + e.amount, 0);
+        const totalInventoryCost = inventory.reduce((s, i) => s + ((i.quantity || 0) * (i.import_price || 0)), 0);
+        const totalExp = totalExpRecord + totalInventoryCost;
+        const netProfit = (totalRev - totalImport) - totalExp;
 
-                const wsHoadonData = [
-                    ["Chi tiết hóa đơn"],
-                    [],
-                    ["ID", "Tên Bàn / Khách", "Tiền Hàng", "% Giảm", "Tiền Giảm", "Tổng Tiền", "Phí Ship", "Hình Thức", "Loại Đơn", "Ngày Tạo"]
-                ];
-                let sumGoods = 0, sumDiscount = 0, sumGrand = 0, sumShip = 0;
-                bills.forEach(b => {
-                    sumGoods += (b.goods_total || 0);
-                    sumDiscount += (b.discount_amount || 0);
-                    sumGrand += b.grand_total;
-                    sumShip += (b.shipping_fee || 0);
-                    wsHoadonData.push([b.id, b.room_name, b.goods_total || 0, b.discount_percent || 0, b.discount_amount || 0, b.grand_total, b.shipping_fee || 0, b.payment_method || 'Tiền mặt', b.order_type, b.created_date]);
-                });
-                wsHoadonData.push(["TỔNG", "", sumGoods, "", sumDiscount, sumGrand, sumShip, "", "", ""]);
+        const workbook = new ExcelJS.Workbook();
 
-                const wsTonkhoData = [
-                    ["Báo cáo tồn kho"],
-                    [],
-                    ["Tên Hàng", "Danh Mục", "Tồn Kho", "Đơn Vị", "Giá Nhập", "Thành Tiền Tồn Kho"]
-                ];
-                let sumInvQty = 0, sumInvTotal = 0;
-                inventory.forEach(i => {
-                    const thanhTien = i.quantity * i.import_price;
-                    sumInvQty += i.quantity;
-                    sumInvTotal += thanhTien;
-                    wsTonkhoData.push([i.item_name, i.category, i.quantity, i.unit, i.import_price, thanhTien]);
-                });
-                wsTonkhoData.push(["TỔNG", "", sumInvQty, "", "", sumInvTotal]);
-
-                const wsChiphiData = [
-                    ["Chi phí"],
-                    [],
-                    ["ID", "Loại Chi Phí", "Số Tiền", "Ghi Chú", "Thời Gian / Ngày Chi Trả"]
-                ];
-                let sumExp = 0;
-                expenses.forEach(e => {
-                    sumExp += e.amount;
-                    wsChiphiData.push([e.id, e.category, e.amount, e.note || '', e.date]);
-                });
-                wsChiphiData.push(["TỔNG", "", sumExp, "", ""]);
-
-                // Hàm tạo sheet và đóng khung border hoàn chỉnh
-                function createFormattedSheet(data) {
-                    const ws = {};
-                    const range = { s: { c: 0, r: 0 }, e: { c: 0, r: data.length - 1 } };
-                    
-                    const borderStyle = {
-                        top: { style: "thin", color: { rgb: "000000" } },
-                        bottom: { style: "thin", color: { rgb: "000000" } },
-                        left: { style: "thin", color: { rgb: "000000" } },
-                        right: { style: "thin", color: { rgb: "000000" } }
-                    };
-
-                    for (let R = 0; R < data.length; ++R) {
-                        const row = data[R];
-                        if (row.length > range.e.c) {
-                            range.e.c = row.length - 1;
-                        }
-                        for (let C = 0; C < row.length; ++C) {
-                            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-                            const cellValue = row[C];
-                            
-                            if (cellValue !== undefined && cellValue !== null && cellValue !== "") {
-                                const cellType = typeof cellValue === 'number' ? 'n' : 's';
-                                ws[cellAddress] = {
-                                    v: cellValue,
-                                    t: cellType,
-                                    s: { border: borderStyle }
-                                };
-                            } else {
-                                ws[cellAddress] = {
-                                    v: "",
-                                    t: "s",
-                                    s: { border: borderStyle }
-                                };
-                            }
-                        }
-                    }
-                    
-                    ws['!ref'] = XLSX.utils.encode_range(range);
-                    return ws;
-                }
-
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsTongQuatData), "Báo cáo tổng quát doanh thu");
-                XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsHoadonData), "Chi tiết hóa đơn");
-                XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsTonkhoData), "Báo cáo tồn kho");
-                XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsChiphiData), "Chi phí");
-
-                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true });
-                res.setHeader('Content-Disposition', 'attachment; filename=BaoCaoDoanhThu.xlsx');
-                res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-                res.send(buffer);
+        function addStyledSheet(workbook, sheetName, data) {
+            const sheet = workbook.addWorksheet(sheetName);
+            data.forEach(row => {
+                sheet.addRow(row);
             });
+
+            const thinBorder = {
+                top: { style: 'thin', color: { argb: '000000' } },
+                left: { style: 'thin', color: { argb: '000000' } },
+                bottom: { style: 'thin', color: { argb: '000000' } },
+                right: { style: 'thin', color: { argb: '000000' } }
+            };
+
+            sheet.eachRow({ includeEmpty: false }, (row) => {
+                row.eachCell({ includeEmpty: false }, (cell) => {
+                    cell.border = thinBorder;
+                });
+            });
+        }
+
+        const wsTongQuatData = [
+            ["Báo cáo tổng quát doanh thu"],
+            ["Từ ngày:", start_date || "Tất cả", "Đến ngày:", end_date || "Tất cả"],
+            [],
+            ["Chỉ tiêu", "Số tiền (VNĐ)"],
+            ["Tổng Doanh Thu", totalRev],
+            ["Tổng Giá Vốn", totalImport],
+            ["Tổng Chi Phí (Gồm Chi Phí + Tồn Kho)", totalExp],
+            ["Lợi Nhuận Ròng", netProfit],
+            [],
+            ["Tổng", "", totalRev]
+        ];
+        addStyledSheet(workbook, "Báo cáo tổng quát doanh thu", wsTongQuatData);
+
+        const wsHoadonData = [
+            ["Chi tiết hóa đơn"],
+            [],
+            ["ID", "Tên Bàn / Khách", "Tiền Hàng", "% Giảm", "Tiền Giảm", "Tổng Tiền", "Phí Ship", "Hình Thức", "Loại Đơn", "Ngày Tạo"]
+        ];
+        let sumGoods = 0, sumDiscount = 0, sumGrand = 0, sumShip = 0;
+        bills.forEach(b => {
+            sumGoods += (b.goods_total || 0);
+            sumDiscount += (b.discount_amount || 0);
+            sumGrand += b.grand_total;
+            sumShip += (b.shipping_fee || 0);
+            wsHoadonData.push([b.id, b.room_name, b.goods_total || 0, b.discount_percent || 0, b.discount_amount || 0, b.grand_total, b.shipping_fee || 0, b.payment_method || 'Tiền mặt', b.order_type, b.created_date]);
         });
-    });
+        wsHoadonData.push(["TỔNG", "", sumGoods, "", sumDiscount, sumGrand, sumShip, "", "", ""]);
+        addStyledSheet(workbook, "Chi tiết hóa đơn", wsHoadonData);
+
+        const wsTonkhoData = [
+            ["Báo cáo tồn kho"],
+            [],
+            ["Tên Hàng", "Danh Mục", "Tồn Kho", "Đơn Vị", "Giá Nhập", "Thành Tiền Tồn Kho"]
+        ];
+        let sumInvQty = 0, sumInvTotal = 0;
+        inventory.forEach(i => {
+            const thanhTien = i.quantity * i.import_price;
+            sumInvQty += i.quantity;
+            sumInvTotal += thanhTien;
+            wsTonkhoData.push([i.item_name, i.category, i.quantity, i.unit, i.import_price, thanhTien]);
+        });
+        wsTonkhoData.push(["TỔNG", "", sumInvQty, "", "", sumInvTotal]);
+        addStyledSheet(workbook, "Báo cáo tồn kho", wsTonkhoData);
+
+        const wsChiphiData = [
+            ["Chi phí"],
+            [],
+            ["ID", "Loại Chi Phí", "Số Tiền", "Ghi Chú", "Thời Gian / Ngày Chi Trả"]
+        ];
+        let sumExp = 0;
+        expenses.forEach(e => {
+            sumExp += e.amount;
+            wsChiphiData.push([e.id, e.category, e.amount, e.note || '', e.date]);
+        });
+        wsChiphiData.push(["TỔNG", "", sumExp, "", ""]);
+        addStyledSheet(workbook, "Chi phí", wsChiphiData);
+
+        res.setHeader('Content-Disposition', 'attachment; filename=BaoCaoDoanhThu.xlsx');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Menu
