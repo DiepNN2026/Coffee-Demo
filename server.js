@@ -274,7 +274,7 @@ app.post('/api/rooms/book', (req, res) => {
     });
 });
 
-// 1. Xem trước thông tin tạm tính và in bill (Chưa đổi trạng thái bàn, chưa trừ kho)
+// 1. Xem trước thông tin tạm tính và in bill
 app.post('/api/rooms/preview-checkout', (req, res) => {
     const { room_id } = req.body;
     pool.query(`SELECT * FROM settings LIMIT 1`, (err, settingRes) => {
@@ -308,7 +308,7 @@ app.post('/api/rooms/preview-checkout', (req, res) => {
     });
 });
 
-// 2. Xác nhận Đã thanh toán (Tiền mặt hoặc Chuyển khoản): Lưu bill vào doanh thu, trừ tồn kho và chuyển bàn về Trống
+// 2. Xác nhận Đã thanh toán
 app.post('/api/rooms/confirm-paid', (req, res) => {
     const { room_id, payment_method } = req.body;
     const method = payment_method || 'Tiền mặt';
@@ -376,7 +376,7 @@ app.get('/api/admin/online-orders', (req, res) => {
     });
 });
 
-// Duyệt Đơn hàng Online (Trừ tồn kho khi Nhân viên hoặc Admin xác nhận)
+// Duyệt Đơn hàng Online
 app.post('/api/admin/online-orders/checkout', (req, res) => {
     const { order_id, shipping_fee, payment_method } = req.body;
     const method = payment_method || 'Chuyển khoản';
@@ -486,7 +486,7 @@ app.get('/api/reports/revenue', (req, res) => {
     });
 });
 
-// Xuất file Excel .xlsx (Tiêu đề phía trên chính là tên đầy đủ của từng sheet và tự kẻ bảng dữ liệu)
+// Xuất file Excel .xlsx với định dạng đóng khung border đầy đủ
 app.get('/api/reports/export-excel', (req, res) => {
     const { start_date, end_date } = req.query;
     let billQuery = `SELECT * FROM bills`;
@@ -516,7 +516,6 @@ app.get('/api/reports/export-excel', (req, res) => {
                 const totalExp = totalExpRecord + totalInventoryCost;
                 const netProfit = (totalRev - totalImport) - totalExp;
 
-                // Tên đầy đủ của sheet được đưa lên dòng 1 làm tiêu đề chính
                 const wsTongQuatData = [
                     ["Báo cáo tổng quát doanh thu"],
                     ["Từ ngày:", start_date || "Tất cả", "Đến ngày:", end_date || "Tất cả"],
@@ -571,9 +570,7 @@ app.get('/api/reports/export-excel', (req, res) => {
                 });
                 wsChiphiData.push(["TỔNG", "", sumExp, "", ""]);
 
-                const wb = XLSX.utils.book_new();
-
-               // Định nghĩa hàm tạo sheet và đóng khung border hoàn chỉnh
+                // Hàm tạo sheet và đóng khung border hoàn chỉnh
                 function createFormattedSheet(data) {
                     const ws = {};
                     const range = { s: { c: 0, r: 0 }, e: { c: 0, r: data.length - 1 } };
@@ -602,7 +599,6 @@ app.get('/api/reports/export-excel', (req, res) => {
                                     s: { border: borderStyle }
                                 };
                             } else {
-                                // Vẫn tạo ô trống có khung để bảng liền mạch đẹp mắt
                                 ws[cellAddress] = {
                                     v: "",
                                     t: "s",
@@ -630,6 +626,7 @@ app.get('/api/reports/export-excel', (req, res) => {
         });
     });
 });
+
 // Menu
 app.get('/api/menu', (req, res) => {
     pool.query(`SELECT * FROM menu ORDER BY id`, (err, result) => {
@@ -717,32 +714,6 @@ app.post('/api/inventory', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/inventory/save', async (req, res) => {
-    const { id, item_name, category, quantity, unit, import_price, import_date } = req.body;
-    if (id) {
-        pool.query(`UPDATE inventory SET item_name = $1, category = $2, quantity = $3, unit = $4, import_price = $5, import_date = $6 WHERE id = $7`,
-            [item_name, category, quantity || 0, unit, import_price || 0, import_date, id], (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
-            });
-    } else {
-        try {
-            await pool.query(`INSERT INTO inventory (item_name, category, quantity, unit, import_price, import_date) VALUES ($1, $2, $3, $4, $5, $6)`,
-                [item_name, category, quantity || 0, unit, import_price || 0, import_date || new Date().toISOString().split('T')[0]]);
-            
-            const menuCheck = await pool.query(`SELECT * FROM menu WHERE item_name = $1`, [item_name]);
-            if (menuCheck.rows.length === 0) {
-                const sellPrice = (import_price || 0) * 1.3;
-                await pool.query(`INSERT INTO menu (item_name, category, unit, import_price, price) VALUES ($1, $2, $3, $4, $5)`, 
-                    [item_name, category, unit, import_price || 0, sellPrice]);
-            }
-            res.json({ success: true });
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
     }
 });
 
