@@ -178,7 +178,35 @@
                     <ul class="list-group mb-3" id="order-list"></ul>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-warning w-100" id="checkout-btn" style="display:none;" onclick="checkoutRoom()">Tính Tiền & In Bill</button>
+                    <button class="btn btn-warning w-100" id="checkout-btn" style="display:none;" onclick="openCheckoutModal()">Tạm tính & in bill</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Xác Nhận Thanh Toán & In Bill -->
+    <div class="modal fade" id="checkoutConfirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">Xác Nhận Thanh Toán & In Bill</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="co-room-id">
+                    <p class="mb-3">Vui lòng chọn phương thức thanh toán trước khi xác nhận:</p>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="paymentMethod" id="pmCash" value="Tiền mặt" checked>
+                        <label class="form-check-label fw-bold text-success" for="pmCash">💵 Tiền mặt</label>
+                    </div>
+                    <div class="form-check mb-4">
+                        <input class="form-check-input" type="radio" name="paymentMethod" id="pmTransfer" value="Chuyển khoản">
+                        <label class="form-check-label fw-bold text-primary" for="pmTransfer">💳 Chuyển khoản</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button class="btn btn-success fw-bold" onclick="confirmCheckoutAndPaid()">Đã thanh toán & In Bill</button>
                 </div>
             </div>
         </div>
@@ -197,6 +225,7 @@
                         <span>Bàn/ĐH: <b id="bill-room"></b></span>
                         <span id="bill-time-print"></span>
                     </div>
+                    <div class="small text-center mt-1">Hình thức: <b id="bill-payment-method">Tiền mặt</b></div>
                     <hr style="border-top: dashed 1px #000; margin: 5px 0;">
                 </div>
                 <table class="table table-sm table-borderless mb-2" style="font-size: 11px;">
@@ -475,9 +504,22 @@
             location.reload();
         }
 
-        async function checkoutRoom() {
+        function openCheckoutModal() {
             const room_id = document.getElementById('a-room-id').value;
-            const res = await fetch('/api/rooms/checkout', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id }) });
+            document.getElementById('co-room-id').value = room_id;
+            bootstrap.Modal.getInstance(document.getElementById('activeRoomModal')).hide();
+            new bootstrap.Modal(document.getElementById('checkoutConfirmModal')).show();
+        }
+
+        async function confirmCheckoutAndPaid() {
+            const room_id = document.getElementById('co-room-id').value;
+            const payment_method = document.querySelector('input[name="paymentMethod"]:checked').value;
+
+            const res = await fetch('/api/rooms/checkout', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ room_id, payment_method }) 
+            });
             const data = await res.json();
             if(data.success) {
                 document.getElementById('bill-facility-name').innerText = data.setting.name;
@@ -485,6 +527,7 @@
                 document.getElementById('bill-phone').innerText = `ĐT: ${data.setting.phone || ''}`;
                 document.getElementById('bill-room').innerText = data.report.room_name;
                 document.getElementById('bill-time-print').innerText = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+                document.getElementById('bill-payment-method').innerText = data.report.paymentMethod || 'Tiền mặt';
                 document.getElementById('bill-qr-img').src = data.setting.qr_code;
 
                 let html = '';
@@ -498,7 +541,7 @@
                 document.getElementById('bill-shipping-fee').innerText = '0đ';
                 document.getElementById('bill-total').innerText = `${Number(data.report.grandTotal).toLocaleString()}đ`;
 
-                bootstrap.Modal.getInstance(document.getElementById('activeRoomModal')).hide();
+                bootstrap.Modal.getInstance(document.getElementById('checkoutConfirmModal')).hide();
                 new bootstrap.Modal(document.getElementById('billModal')).show();
             }
         }
