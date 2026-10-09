@@ -178,84 +178,73 @@
                     <ul class="list-group mb-3" id="order-list"></ul>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-warning w-100" id="checkout-btn" style="display:none;" onclick="openCheckoutModal()">Tạm tính & in bill</button>
+                    <button class="btn btn-warning w-100" id="checkout-btn" style="display:none;" onclick="checkoutRoom()">Tạm tính & in bill</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Modal Xác Nhận Thanh Toán & In Bill -->
-    <div class="modal fade" id="checkoutConfirmModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-warning">
-                    <h5 class="modal-title">Xác Nhận Thanh Toán & In Bill</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="co-room-id">
-                    <p class="mb-3">Vui lòng chọn phương thức thanh toán trước khi xác nhận:</p>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="paymentMethod" id="pmCash" value="Tiền mặt" checked>
-                        <label class="form-check-label fw-bold text-success" for="pmCash">💵 Tiền mặt</label>
-                    </div>
-                    <div class="form-check mb-4">
-                        <input class="form-check-input" type="radio" name="paymentMethod" id="pmTransfer" value="Chuyển khoản">
-                        <label class="form-check-label fw-bold text-primary" for="pmTransfer">💳 Chuyển khoản</label>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-                    <button class="btn btn-success fw-bold" onclick="confirmCheckoutAndPaid()">Đã thanh toán & In Bill</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal In Bill -->
+    <!-- Modal In Bill & Xác Nhận Thanh Toán -->
     <div class="modal fade" id="billModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered" style="max-width: 350px;">
-            <div class="modal-content p-3" id="printable-bill" style="font-family: 'Courier New', Courier, monospace;">
-                <div class="text-center mb-2">
-                    <h5 class="fw-bold mb-0" id="bill-facility-name">KARAOKE CALI</h5>
-                    <small id="bill-address"></small><br><small id="bill-phone"></small>
-                    <hr style="border-top: dashed 1px #000; margin: 5px 0;">
-                    <h6 class="fw-bold mb-1">PHIẾU TÍNH TIỀN</h6>
-                    <div class="d-flex justify-content-between small">
-                        <span>Bàn/ĐH: <b id="bill-room"></b></span>
-                        <span id="bill-time-print"></span>
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 400px;">
+            <div class="modal-content p-3">
+                <div id="printable-bill" style="font-family: 'Courier New', Courier, monospace;">
+                    <div class="text-center mb-2">
+                        <h5 class="fw-bold mb-0" id="bill-facility-name">KARAOKE CALI</h5>
+                        <small id="bill-address"></small><br><small id="bill-phone"></small>
+                        <hr style="border-top: dashed 1px #000; margin: 5px 0;">
+                        <h6 class="fw-bold mb-1">PHIẾU TẠM TÍNH</h6>
+                        <div class="d-flex justify-content-between small">
+                            <span>Bàn/ĐH: <b id="bill-room"></b></span>
+                            <span id="bill-time-print"></span>
+                        </div>
+                        <hr style="border-top: dashed 1px #000; margin: 5px 0;">
                     </div>
-                    <div class="small text-center mt-1">Hình thức: <b id="bill-payment-method">Tiền mặt</b></div>
+                    <table class="table table-sm table-borderless mb-2" style="font-size: 11px;">
+                        <thead><tr class="border-bottom"><th>Món</th><th>SL</th><th>ĐG</th><th class="text-end">T.Tiền</th></tr></thead>
+                        <tbody id="bill-items"></tbody>
+                    </table>
                     <hr style="border-top: dashed 1px #000; margin: 5px 0;">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Tiền hàng:</span>
+                        <span id="bill-goods-total">0đ</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Khuyến mãi (<span id="bill-disc-pct">0</span>%):</span>
+                        <span id="bill-discount-amount">0đ</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-1" id="bill-shipping-row" style="display:none;">
+                        <span>Phí ship:</span>
+                        <span id="bill-shipping-fee">0đ</span>
+                    </div>
+                    <div class="d-flex justify-content-between fw-bold fs-6">
+                        <span>TỔNG CỘNG:</span>
+                        <span class="text-danger" id="bill-total">0đ</span>
+                    </div>
+                    <div class="text-center mt-2" id="bill-qr-container">
+                        <small>Quét mã QR thanh toán:</small><br>
+                        <img id="bill-qr-img" src="" style="max-height: 110px;" class="img-fluid mt-1">
+                    </div>
                 </div>
-                <table class="table table-sm table-borderless mb-2" style="font-size: 11px;">
-                    <thead><tr class="border-bottom"><th>Món</th><th>SL</th><th>ĐG</th><th class="text-end">T.Tiền</th></tr></thead>
-                    <tbody id="bill-items"></tbody>
-                </table>
-                <hr style="border-top: dashed 1px #000; margin: 5px 0;">
-                <div class="d-flex justify-content-between small mb-1">
-                    <span>Tiền hàng:</span>
-                    <span id="bill-goods-total">0đ</span>
-                </div>
-                <div class="d-flex justify-content-between small mb-1">
-                    <span>Khuyến mãi (<span id="bill-disc-pct">0</span>%):</span>
-                    <span id="bill-discount-amount">0đ</span>
-                </div>
-                <div class="d-flex justify-content-between small mb-1" id="bill-shipping-row" style="display:none;">
-                    <span>Phí ship:</span>
-                    <span id="bill-shipping-fee">0đ</span>
-                </div>
-                <div class="d-flex justify-content-between fw-bold fs-6">
-                    <span>TỔNG CỘNG:</span>
-                    <span class="text-danger" id="bill-total">0đ</span>
-                </div>
-                <div class="text-center mt-2" id="bill-qr-container">
-                    <small>Quét mã QR thanh toán:</small><br>
-                    <img id="bill-qr-img" src="" style="max-height: 120px;" class="img-fluid mt-1">
-                </div>
-                <div class="text-center mt-3 d-print-none">
-                    <button class="btn btn-primary btn-sm me-2" onclick="window.print()">In Hóa Đơn</button>
-                    <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal" onclick="location.reload()">Đóng</button>
+
+                <!-- Khu vực chọn thanh toán & xác nhận Đã thanh toán -->
+                <hr class="my-3 d-print-none">
+                <div class="d-print-none">
+                    <label class="form-label small fw-bold text-muted">Chọn hình thức thanh toán:</label>
+                    <div class="d-flex gap-3 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="paymentMethod" id="payCash" value="Tiền mặt" checked>
+                            <label class="form-check-label small fw-bold" for="payCash">Tiền mặt</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="paymentMethod" id="payTransfer" value="Chuyển khoản">
+                            <label class="form-check-label small fw-bold" for="payTransfer">Chuyển khoản</label>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <button class="btn btn-outline-primary btn-sm" onclick="window.print()">🖨️ In Bill</button>
+                        <button class="btn btn-success btn-sm fw-bold" onclick="confirmPaidAndClose()">✅ Xác nhận Đã thanh toán</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -278,6 +267,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let cart = [];
+        let currentCheckoutRoomId = null;
 
         async function init() {
             const resSet = await fetch('/api/settings');
@@ -504,22 +494,12 @@
             location.reload();
         }
 
-        function openCheckoutModal() {
+        async function checkoutRoom() {
             const room_id = document.getElementById('a-room-id').value;
-            document.getElementById('co-room-id').value = room_id;
-            bootstrap.Modal.getInstance(document.getElementById('activeRoomModal')).hide();
-            new bootstrap.Modal(document.getElementById('checkoutConfirmModal')).show();
-        }
-
-        async function confirmCheckoutAndPaid() {
-            const room_id = document.getElementById('co-room-id').value;
-            const payment_method = document.querySelector('input[name="paymentMethod"]:checked').value;
-
-            const res = await fetch('/api/rooms/checkout', { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ room_id, payment_method }) 
-            });
+            currentCheckoutRoomId = room_id;
+            
+            // Lấy thông tin tính tiền tạm thời để hiển thị và in bill ngay lập tức
+            const res = await fetch('/api/rooms/preview-checkout', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id }) });
             const data = await res.json();
             if(data.success) {
                 document.getElementById('bill-facility-name').innerText = data.setting.name;
@@ -527,7 +507,6 @@
                 document.getElementById('bill-phone').innerText = `ĐT: ${data.setting.phone || ''}`;
                 document.getElementById('bill-room').innerText = data.report.room_name;
                 document.getElementById('bill-time-print').innerText = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
-                document.getElementById('bill-payment-method').innerText = data.report.paymentMethod || 'Tiền mặt';
                 document.getElementById('bill-qr-img').src = data.setting.qr_code;
 
                 let html = '';
@@ -541,8 +520,26 @@
                 document.getElementById('bill-shipping-fee').innerText = '0đ';
                 document.getElementById('bill-total').innerText = `${Number(data.report.grandTotal).toLocaleString()}đ`;
 
-                bootstrap.Modal.getInstance(document.getElementById('checkoutConfirmModal')).hide();
+                bootstrap.Modal.getInstance(document.getElementById('activeRoomModal')).hide();
                 new bootstrap.Modal(document.getElementById('billModal')).show();
+            }
+        }
+
+        async function confirmPaidAndClose() {
+            if (!currentCheckoutRoomId) return;
+            const payment_method = document.querySelector('input[name="paymentMethod"]:checked') ? document.querySelector('input[name="paymentMethod"]:checked').value : 'Tiền mặt';
+
+            const res = await fetch('/api/rooms/confirm-paid', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ room_id: currentCheckoutRoomId, payment_method }) 
+            });
+            const data = await res.json();
+            if(data.success) {
+                alert('Đã xác nhận thanh toán thành công, bàn đã chuyển về trạng thái trống!');
+                location.reload();
+            } else {
+                alert(data.error || 'Có lỗi xảy ra.');
             }
         }
 
