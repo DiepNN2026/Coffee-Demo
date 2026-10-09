@@ -271,11 +271,9 @@ app.post('/api/rooms/book', (req, res) => {
     });
 });
 
-// Tính tiền bàn & Xác thực thanh toán (Chuyển trạng thái bàn về Trống sau khi thanh toán)
-app.post('/api/rooms/checkout', (req, res) => {
-    const { room_id, payment_method } = req.body;
-    const method = payment_method || 'Tiền mặt';
-
+// 1. Chỉ xem trước thông tin tạm tính và in bill (Chưa đổi trạng thái bàn, chưa trừ kho)
+app.post('/api/rooms/preview-checkout', (req, res) => {
+    const { room_id } = req.body;
     pool.query(`SELECT * FROM settings LIMIT 1`, (err, settingRes) => {
         if (err) return res.status(500).json({ error: err.message });
         const setting = settingRes.rows[0];
@@ -295,30 +293,57 @@ app.post('/api/rooms/checkout', (req, res) => {
                     const goodsTotal = items.reduce((sum, item) => sum + item.total_price, 0);
                     const discountAmount = goodsTotal * discountPercent / 100;
                     const grandTotal = goodsTotal - discountAmount;
-                    const totalImportCost = items.reduce((sum, item) => sum + (item.import_price * item.quantity), 0);
-                    const currentDate = new Date().toISOString().split('T')[0];
 
-                    pool.query(`INSERT INTO bills (room_name, goods_total, discount_percent, discount_amount, grand_total, total_import_cost, items_detail, created_date, shipping_fee, order_type, payment_method) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 'Tại bàn', $9)`,
-                        [room.room_name, goodsTotal, discountPercent, discountAmount, grandTotal, totalImportCost, JSON.stringify(items), currentDate, method], async (err5) => {
-                        if (err5) return res.status(500).json({ error: err5.message });
-                        
-                        for (const item of items) {
-                            await pool.query(`UPDATE inventory SET quantity = GREATEST(0, quantity - $1) WHERE item_name = $2`, [item.quantity, item.item_name]);
-                        }
-
-                        pool.query(`UPDATE rooms SET status = 'Trống', customer_name = NULL WHERE id = $1`, [room_id], (err6) => {
-                            if (err6) return res.status(500).json({ error: err6.message });
-                            pool.query(`DELETE FROM orders WHERE room_id = $1`, [room_id], (err7) => {
-                                if (err7) return res.status(500).json({ error: err7.message });
-                                res.json({
-                                    success: true,
-                                    setting: setting || {},
-                                    report: { room_name: room.room_name, items, goodsTotal, discountPercent, discountAmount, grandTotal, shippingFee: 0, paymentMethod: method }
-                                });
-                            });
-                        });
+                    res.json({
+                        success: true,
+                        setting: setting || {},
+                        report: { room_name: room.room_name, items, goodsTotal, discountPercent, discountAmount, grandTotal }
                     });
                 });
+            });
+        });
+    });
+});
+
+// 2. Xác nhận Đã thanh toán (Tiền mặt hoặc Chuyển khoản): Lưu bill vào doanh thu, trừ tồn kho và chuyển bàn về Trống
+app.post('/api/rooms/confirm-paid', (req, res) => {
+    const { room_id, payment_method } = req.body;
+    const method = payment_method || 'Tiền mặt';
+
+    pool.query(`SELECT * FROM promotions LIMIT 1`, (err2, promoRes) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        const promo = promoRes.rows[0];
+        const discountPercent = (promo && promo.active === 1) ? (promo.discount_percent || 0) : 0;
+
+        pool.query(`SELECT * FROM rooms WHERE id = $1`, [room_id], (err3, roomRes) => {
+            if (err3) return res.status(500).json({ error: err3.message });
+            const room = roomRes.rows[0];
+            if (!room || room.status === 'Trống') return res.status(400).json({ error: 'Bàn đang trống!' });
+
+            pool.query(`SELECT o.*, m.item_name, m.category, m.unit, m.import_price FROM orders o JOIN menu m ON o.item_id = m.id WHERE o.room_id = $1`, [room_id], async (err4, orderItemsRes) => {
+                if (err4) return res.status(500).json({ error: err4.message });
+                const items = orderItemsRes.rows || [];
+                const goodsTotal = items.reduce((sum, item) => sum + item.total_price, 0);
+                const discountAmount = goodsTotal * discountPercent / 100;
+                const grandTotal = goodsTotal - discountAmount;
+                const totalImportCost = items.reduce((sum, item) => sum + (item.import_price * item.quantity), 0);
+                const currentDate = new Date().toISOString().split('T')[0];
+
+                try {
+                    await pool.query(`INSERT INTO bills (room_name, goods_total, discount_percent, discount_amount, grand_total, total_import_cost, items_detail, created_date, shipping_fee, order_type, payment_method) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 'Tại bàn', $9)`,
+                        [room.room_name, goodsTotal, discountPercent, discountAmount, grandTotal, totalImportCost, JSON.stringify(items), currentDate, method]);
+                    
+                    for (const item of items) {
+                        await pool.query(`UPDATE inventory SET quantity = GREATEST(0, quantity - $1) WHERE item_name = $2`, [item.quantity, item.item_name]);
+                    }
+
+                    await pool.query(`UPDATE rooms SET status = 'Trống', customer_name = NULL WHERE id = $1`, [room_id]);
+                    await pool.query(`DELETE FROM orders WHERE room_id = $1`, [room_id]);
+
+                    res.json({ success: true });
+                } catch (errDb) {
+                    res.status(500).json({ error: errDb.message });
+                }
             });
         });
     });
@@ -376,7 +401,6 @@ app.post('/api/admin/online-orders/checkout', (req, res) => {
                     [`Online: ${order.customer_name} (${order.customer_phone})`, goodsTotal, discountPercent, discountAmount, grandTotal, totalImportCost, order.items_detail, order.created_date, shipFee, method], async (err4) => {
                     if (err4) return res.status(500).json({ error: err4.message });
                     
-                    // Trừ tồn kho khi xác nhận đơn online
                     for (const item of items) {
                         await pool.query(`UPDATE inventory SET quantity = GREATEST(0, quantity - $1) WHERE item_name = $2`, [item.quantity, item.item_name]);
                     }
@@ -539,7 +563,6 @@ app.get('/api/reports/export-excel', (req, res) => {
 
                 const wb = XLSX.utils.book_new();
 
-                // Tạo worksheet và thiết lập tự động kẻ bảng cho toàn bộ vùng dữ liệu có nội dung
                 function createFormattedSheet(data) {
                     const ws = XLSX.utils.aoa_to_sheet(data);
                     const range = XLSX.utils.decode_range(ws['!ref']);
