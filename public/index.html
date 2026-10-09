@@ -498,7 +498,6 @@
             const room_id = document.getElementById('a-room-id').value;
             currentCheckoutRoomId = room_id;
             
-            // Lấy thông tin tính tiền tạm thời để hiển thị và in bill ngay lập tức
             const res = await fetch('/api/rooms/preview-checkout', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id }) });
             const data = await res.json();
             if(data.success) {
