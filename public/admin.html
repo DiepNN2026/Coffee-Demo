@@ -54,7 +54,7 @@
                 </div>
             </div>
 
-            <!-- Quản lý Khuyến Mãi (Đúng chuẩn Ảnh 1) -->
+            <!-- Quản lý Khuyến Mãi -->
             <div class="tab-pane fade" id="promo-tab">
                 <div class="card p-4 shadow-sm" style="max-width: 750px;">
                     <h4 class="mb-3">🎁 Nhập Khuyến Mãi & Banner Trang Chủ</h4>
@@ -176,7 +176,7 @@
                 </div>
             </div>
 
-            <!-- Chi phí (Có chọn thời gian) -->
+            <!-- Chi phí -->
             <div class="tab-pane fade" id="expenses-tab">
                 <div class="row">
                     <div class="col-md-5 card p-4">
@@ -205,7 +205,7 @@
                 </div>
             </div>
 
-            <!-- Báo cáo doanh thu & Xuất Excel & Chi tiết hóa đơn -->
+            <!-- Báo cáo doanh thu & Xuất Excel -->
             <div class="tab-pane fade" id="report-tab">
                 <div class="card p-4 mb-4">
                     <h4 class="mb-3">Báo Cáo Doanh Thu & Lợi Nhuận</h4>
@@ -235,6 +235,7 @@
                                     <th>Giảm Giá</th>
                                     <th>Tổng Tiền</th>
                                     <th>Phí Ship</th>
+                                    <th>Thanh Toán</th>
                                     <th>Loại Đơn</th>
                                     <th>Ngày Tạo</th>
                                     <th>Thao Tác</th>
@@ -246,7 +247,7 @@
                 </div>
             </div>
 
-            <!-- Quản lý tài khoản (Chỉ Admin) -->
+            <!-- Quản lý tài khoản -->
             <div class="tab-pane fade" id="users-tab">
                 <div class="row">
                     <div class="col-md-5 card p-4">
@@ -273,7 +274,7 @@
         </div>
     </div>
 
-    <!-- Modal In Bill (In lại bill) -->
+    <!-- Modal In Bill -->
     <div class="modal fade" id="billModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered" style="max-width: 350px;">
             <div class="modal-content p-3" id="printable-bill" style="font-family: 'Courier New', Courier, monospace;">
@@ -286,6 +287,7 @@
                         <span id="bill-room"></span>
                         <span id="bill-time-print"></span>
                     </div>
+                    <div class="small text-center mt-1">Hình thức: <b id="bill-payment-method">Tiền mặt</b></div>
                     <hr style="border-top: dashed 1px #000; margin: 5px 0;">
                 </div>
                 <table class="table table-sm table-borderless mb-2" style="font-size: 11px;">
@@ -329,7 +331,6 @@
             window.location.href = 'index.html';
         }
 
-        // Phân quyền: Tài khoản Nhanvien có toàn quyền trừ các quyền tạo/quản lý tài khoản
         if(currentUser.role === 'staff') {
             document.getElementById('user-tab-nav').style.display = 'none';
             document.getElementById('admin-user-badge').innerText = 'Khu Vực Quản Trị (Nhân Viên)';
@@ -446,11 +447,11 @@
             const res = await fetch('/api/admin/online-orders/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ order_id: orderId, shipping_fee })
+                body: JSON.stringify({ order_id: orderId, shipping_fee, payment_method: 'Chuyển khoản' })
             });
             const data = await res.json();
             if (data.success) {
-                alert('Đã duyệt đơn hàng thành công!');
+                alert('Đã duyệt đơn hàng và trừ tồn kho thành công!');
                 loadOnlineOrders();
                 loadBillsTable();
 
@@ -459,6 +460,7 @@
                 document.getElementById('bill-phone').innerText = `ĐT: ${data.setting.phone || ''}`;
                 document.getElementById('bill-room').innerText = data.report.room_name;
                 document.getElementById('bill-time-print').innerText = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+                document.getElementById('bill-payment-method').innerText = 'Chuyển khoản';
                 document.getElementById('bill-qr-img').src = data.setting.qr_code;
 
                 let html = '';
@@ -619,6 +621,7 @@
                     <td>${b.discount_percent || 0}% (${(b.discount_amount || 0).toLocaleString()}đ)</td>
                     <td class="text-danger fw-bold">${b.grand_total.toLocaleString()}đ</td>
                     <td>${(b.shipping_fee || 0).toLocaleString()}đ</td>
+                    <td><span class="badge ${b.payment_method === 'Chuyển khoản' ? 'bg-primary' : 'bg-success'}">${b.payment_method || 'Tiền mặt'}</span></td>
                     <td><span class="badge ${b.order_type === 'Online' ? 'bg-info' : 'bg-secondary'}">${b.order_type || 'Tại bàn'}</span></td>
                     <td>${b.created_date}</td>
                     <td>
@@ -637,6 +640,7 @@
             document.getElementById('bill-phone').innerText = `ĐT: ${setting.phone || ''}`;
             document.getElementById('bill-room').innerText = bill.room_name;
             document.getElementById('bill-time-print').innerText = bill.created_date;
+            document.getElementById('bill-payment-method').innerText = bill.payment_method || 'Tiền mặt';
             document.getElementById('bill-qr-img').src = setting.qr_code;
 
             const items = JSON.parse(bill.items_detail);
