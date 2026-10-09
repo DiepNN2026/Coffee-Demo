@@ -95,6 +95,9 @@ async function initDB() {
             payment_method TEXT DEFAULT 'Tiền mặt'
         )`);
 
+        // Tự động bổ sung cột payment_method nếu bảng bills đã tồn tại từ trước nhưng chưa có cột này
+        await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'Tiền mặt'`);
+
         await pool.query(`CREATE TABLE IF NOT EXISTS expenses (
             id SERIAL PRIMARY KEY,
             category TEXT,
@@ -271,7 +274,7 @@ app.post('/api/rooms/book', (req, res) => {
     });
 });
 
-// 1. Chỉ xem trước thông tin tạm tính và in bill (Chưa đổi trạng thái bàn, chưa trừ kho)
+// 1. Xem trước thông tin tạm tính và in bill (Chưa đổi trạng thái bàn, chưa trừ kho)
 app.post('/api/rooms/preview-checkout', (req, res) => {
     const { room_id } = req.body;
     pool.query(`SELECT * FROM settings LIMIT 1`, (err, settingRes) => {
@@ -483,7 +486,7 @@ app.get('/api/reports/revenue', (req, res) => {
     });
 });
 
-// Xuất file Excel .xlsx (Tự kẻ bảng và tên đầy đủ cho các sheet)
+// Xuất file Excel .xlsx (Tiêu đề phía trên chính là tên đầy đủ của từng sheet và tự kẻ bảng dữ liệu)
 app.get('/api/reports/export-excel', (req, res) => {
     const { start_date, end_date } = req.query;
     let billQuery = `SELECT * FROM bills`;
@@ -513,8 +516,9 @@ app.get('/api/reports/export-excel', (req, res) => {
                 const totalExp = totalExpRecord + totalInventoryCost;
                 const netProfit = (totalRev - totalImport) - totalExp;
 
+                // Tên đầy đủ của sheet được đưa lên dòng 1 làm tiêu đề chính
                 const wsTongQuatData = [
-                    ["BÁO CÁO TỔNG QUÁT DOANH THU & LỢI NHUẬN"],
+                    ["Báo cáo tổng quát doanh thu"],
                     ["Từ ngày:", start_date || "Tất cả", "Đến ngày:", end_date || "Tất cả"],
                     [],
                     ["Chỉ tiêu", "Số tiền (VNĐ)"],
@@ -527,6 +531,8 @@ app.get('/api/reports/export-excel', (req, res) => {
                 ];
 
                 const wsHoadonData = [
+                    ["Chi tiết hóa đơn"],
+                    [],
                     ["ID", "Tên Bàn / Khách", "Tiền Hàng", "% Giảm", "Tiền Giảm", "Tổng Tiền", "Phí Ship", "Hình Thức", "Loại Đơn", "Ngày Tạo"]
                 ];
                 let sumGoods = 0, sumDiscount = 0, sumGrand = 0, sumShip = 0;
@@ -540,6 +546,8 @@ app.get('/api/reports/export-excel', (req, res) => {
                 wsHoadonData.push(["TỔNG", "", sumGoods, "", sumDiscount, sumGrand, sumShip, "", "", ""]);
 
                 const wsTonkhoData = [
+                    ["Báo cáo tồn kho"],
+                    [],
                     ["Tên Hàng", "Danh Mục", "Tồn Kho", "Đơn Vị", "Giá Nhập", "Thành Tiền Tồn Kho"]
                 ];
                 let sumInvQty = 0, sumInvTotal = 0;
@@ -552,6 +560,8 @@ app.get('/api/reports/export-excel', (req, res) => {
                 wsTonkhoData.push(["TỔNG", "", sumInvQty, "", "", sumInvTotal]);
 
                 const wsChiphiData = [
+                    ["Chi phí"],
+                    [],
                     ["ID", "Loại Chi Phí", "Số Tiền", "Ghi Chú", "Thời Gian / Ngày Chi Trả"]
                 ];
                 let sumExp = 0;
