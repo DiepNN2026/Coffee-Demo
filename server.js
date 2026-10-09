@@ -573,32 +573,56 @@ app.get('/api/reports/export-excel', (req, res) => {
 
                 const wb = XLSX.utils.book_new();
 
+               // Định nghĩa hàm tạo sheet và đóng khung border hoàn chỉnh
                 function createFormattedSheet(data) {
-                    const ws = XLSX.utils.aoa_to_sheet(data);
-                    const range = XLSX.utils.decode_range(ws['!ref']);
+                    const ws = {};
+                    const range = { s: { c: 0, r: 0 }, e: { c: 0, r: data.length - 1 } };
+                    
                     const borderStyle = {
                         top: { style: "thin", color: { rgb: "000000" } },
                         bottom: { style: "thin", color: { rgb: "000000" } },
                         left: { style: "thin", color: { rgb: "000000" } },
                         right: { style: "thin", color: { rgb: "000000" } }
                     };
-                    for (let R = range.s.r; R <= range.e.r; ++R) {
-                        for (let C = range.s.c; C <= range.e.c; ++C) {
-                            const cellAddress = XLSX.utils.encode_cell({r: R, c: C});
-                            if (!ws[cellAddress]) continue;
-                            if (!ws[cellAddress].s) ws[cellAddress].s = {};
-                            ws[cellAddress].s.border = borderStyle;
+
+                    for (let R = 0; R < data.length; ++R) {
+                        const row = data[R];
+                        if (row.length > range.e.c) {
+                            range.e.c = row.length - 1;
+                        }
+                        for (let C = 0; C < row.length; ++C) {
+                            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+                            const cellValue = row[C];
+                            
+                            if (cellValue !== undefined && cellValue !== null && cellValue !== "") {
+                                const cellType = typeof cellValue === 'number' ? 'n' : 's';
+                                ws[cellAddress] = {
+                                    v: cellValue,
+                                    t: cellType,
+                                    s: { border: borderStyle }
+                                };
+                            } else {
+                                // Vẫn tạo ô trống có khung để bảng liền mạch đẹp mắt
+                                ws[cellAddress] = {
+                                    v: "",
+                                    t: "s",
+                                    s: { border: borderStyle }
+                                };
+                            }
                         }
                     }
+                    
+                    ws['!ref'] = XLSX.utils.encode_range(range);
                     return ws;
                 }
 
+                const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsTongQuatData), "Báo cáo tổng quát doanh thu");
                 XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsHoadonData), "Chi tiết hóa đơn");
                 XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsTonkhoData), "Báo cáo tồn kho");
                 XLSX.utils.book_append_sheet(wb, createFormattedSheet(wsChiphiData), "Chi phí");
 
-                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+                const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true });
                 res.setHeader('Content-Disposition', 'attachment; filename=BaoCaoDoanhThu.xlsx');
                 res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
                 res.send(buffer);
@@ -606,7 +630,6 @@ app.get('/api/reports/export-excel', (req, res) => {
         });
     });
 });
-
 // Menu
 app.get('/api/menu', (req, res) => {
     pool.query(`SELECT * FROM menu ORDER BY id`, (err, result) => {
