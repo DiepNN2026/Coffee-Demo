@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title id="page-title">Coffee Demo</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Thêm thư viện Socket.io client -->
+    <script src="/socket.io/socket.io.js"></script>
     <style>
         .room-empty { background-color: #d1e7dd !important; border-color: #badbcc !important; cursor: pointer; transition: 0.2s; }
         .room-empty:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -19,6 +21,7 @@
     </style>
 </head>
 <body class="bg-light">
+    <!-- ... (Giữ nguyên toàn bộ phần HTML bên trong body như cũ) ... -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-2 shadow-sm">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
@@ -269,6 +272,9 @@
         let cart = [];
         let currentCheckoutRoomId = null;
 
+        // Khởi tạo kết nối Socket.io Realtime với Server
+        const socket = io();
+
         // Hàm phát âm thanh thông báo
         function speakText(text) {
             if ('speechSynthesis' in window) {
@@ -280,7 +286,7 @@
             }
         }
 
-        // Hàm hỗ trợ lọc và chuyển đổi số bàn sang tiếng Anh (ví dụ: "Bàn 1" -> "one", "02" -> "two", "VIP 3" -> "three")
+        // Chuyển đổi tên bàn sang tiếng Anh (Ví dụ: "Bàn 2" -> "two")
         function getTableNumberEnglish(roomName) {
             const matches = roomName.match(/\d+/g);
             if (!matches) return roomName;
@@ -294,22 +300,22 @@
             return words[num] || num.toString();
         }
 
-        // Kiểm tra định kỳ đơn online mới để báo "Order online new"
-        let lastOnlineOrderCount = -1;
-        async function checkOnlineOrdersNotification() {
-            try {
-                const res = await fetch('/api/admin/online-orders');
-                const orders = await res.json();
-                const pendingCount = orders.filter(o => o.status === 'Chờ xác nhận').length;
-                if (lastOnlineOrderCount !== -1 && pendingCount > lastOnlineOrderCount) {
-                    speakText("Order online new");
-                }
-                lastOnlineOrderCount = pendingCount;
-            } catch (e) {
-                console.error("Lỗi kiểm tra đơn online", e);
-            }
-        }
-        setInterval(checkOnlineOrdersNotification, 15000);
+        // LẮNG NGHE SỰ KIỆN REALTIME TỪ TẤT CẢ CÁC MÁY
+        socket.on('order_added', (data) => {
+            const numEng = getTableNumberEnglish(data.roomName);
+            speakText(`order table ${numEng}`);
+            loadRooms(); // Cập nhật lại giao diện bàn nếu đang mở
+        });
+
+        socket.on('online_order_new', () => {
+            speakText("Order online new");
+        });
+
+        socket.on('room_paid', (data) => {
+            const numEng = getTableNumberEnglish(data.roomName);
+            speakText(`Successed table ${numEng}`);
+            loadRooms(); // Cập nhật lại giao diện bàn
+        });
 
         async function init() {
             const resSet = await fetch('/api/settings');
@@ -522,15 +528,10 @@
             const room_id = document.getElementById('a-room-id').value;
             const item_id = document.getElementById('menu-select').value;
             const quantity = document.getElementById('menu-qty').value;
-            const roomName = document.getElementById('a-room-name').innerText; 
 
-            const res = await fetch('/api/orders', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id, item_id, quantity }) });
-            if (res.ok) {
-                // Đọc dạng: "order table two", "order table three"...
-                const numEng = getTableNumberEnglish(roomName);
-                speakText(`order table ${numEng}`);
-                loadOrders(room_id);
-            }
+            // Gửi request lên server (Server sẽ tự động broadcast sự kiện tới toàn bộ máy kết nối)
+            await fetch('/api/orders', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id, item_id, quantity }) });
+            loadOrders(room_id);
         }
 
         async function confirmBooking() {
@@ -576,7 +577,6 @@
         async function confirmPaidAndClose() {
             if (!currentCheckoutRoomId) return;
             const payment_method = document.querySelector('input[name="paymentMethod"]:checked') ? document.querySelector('input[name="paymentMethod"]:checked').value : 'Tiền mặt';
-            const roomName = document.getElementById('bill-room').innerText; 
 
             const res = await fetch('/api/rooms/confirm-paid', { 
                 method: 'POST', 
@@ -585,14 +585,8 @@
             });
             const data = await res.json();
             if(data.success) {
-                // Đọc dạng: "Successed table one", "Successed table two"...
-                const numEng = getTableNumberEnglish(roomName);
-                speakText(`Successed table ${numEng}`);
-
                 alert('Đã xác nhận thanh toán thành công, bàn đã chuyển về trạng thái trống!');
-                setTimeout(() => {
-                    location.reload();
-                }, 1500);
+                location.reload();
             } else {
                 alert(data.error || 'Có lỗi xảy ra.');
             }
