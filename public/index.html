@@ -269,6 +269,34 @@
         let cart = [];
         let currentCheckoutRoomId = null;
 
+        // Hàm phát âm thanh thông báo bằng Speech Synthesis API
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Dừng các lệnh đọc trước đó để đọc ngay lập tức
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-US';
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // Kiểm tra định kỳ đơn hàng online mới để báo "Order online new"
+        let lastOnlineOrderCount = -1;
+        async function checkOnlineOrdersNotification() {
+            try {
+                const res = await fetch('/api/admin/online-orders');
+                const orders = await res.json();
+                const pendingCount = orders.filter(o => o.status === 'Chờ xác nhận').length;
+                if (lastOnlineOrderCount !== -1 && pendingCount > lastOnlineOrderCount) {
+                    speakText("Order online new");
+                }
+                lastOnlineOrderCount = pendingCount;
+            } catch (e) {
+                console.error("Lỗi kiểm tra đơn online", e);
+            }
+        }
+        setInterval(checkOnlineOrdersNotification, 15000); // Kiểm tra mỗi 15 giây
+
         async function init() {
             const resSet = await fetch('/api/settings');
             const settings = await resSet.json();
@@ -480,8 +508,14 @@
             const room_id = document.getElementById('a-room-id').value;
             const item_id = document.getElementById('menu-select').value;
             const quantity = document.getElementById('menu-qty').value;
-            await fetch('/api/orders', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id, item_id, quantity }) });
-            loadOrders(room_id);
+            const roomName = document.getElementById('a-room-name').innerText; // Lấy tên bàn hiện tại
+
+            const res = await fetch('/api/orders', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id, item_id, quantity }) });
+            if (res.ok) {
+                // Phát âm thanh "Table + số bàn" khi thêm món thành công
+                speakText(`Table ${roomName}`);
+                loadOrders(room_id);
+            }
         }
 
         async function confirmBooking() {
@@ -527,6 +561,7 @@
         async function confirmPaidAndClose() {
             if (!currentCheckoutRoomId) return;
             const payment_method = document.querySelector('input[name="paymentMethod"]:checked') ? document.querySelector('input[name="paymentMethod"]:checked').value : 'Tiền mặt';
+            const roomName = document.getElementById('bill-room').innerText; // Lấy tên bàn trên bill
 
             const res = await fetch('/api/rooms/confirm-paid', { 
                 method: 'POST', 
@@ -535,8 +570,13 @@
             });
             const data = await res.json();
             if(data.success) {
+                // Phát âm thanh xác thực thành công: "Successed table + số bàn"
+                speakText(`Successed table ${roomName}`);
+
                 alert('Đã xác nhận thanh toán thành công, bàn đã chuyển về trạng thái trống!');
-                location.reload();
+                setTimeout(() => {
+                    location.reload();
+                }, 1500); // Chờ 1.5 giây để âm thanh đọc xong trước khi load lại
             } else {
                 alert(data.error || 'Có lỗi xảy ra.');
             }
