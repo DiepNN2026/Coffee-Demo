@@ -269,10 +269,10 @@
         let cart = [];
         let currentCheckoutRoomId = null;
 
-        // Hàm phát âm thanh thông báo bằng Speech Synthesis API
+        // Hàm phát âm thanh thông báo
         function speakText(text) {
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel(); // Dừng các lệnh đọc trước đó để đọc ngay lập tức
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'en-US';
                 utterance.rate = 1.0;
@@ -280,7 +280,21 @@
             }
         }
 
-        // Kiểm tra định kỳ đơn hàng online mới để báo "Order online new"
+        // Hàm hỗ trợ lọc và chuyển đổi số bàn sang tiếng Anh (ví dụ: "Bàn 1" -> "one", "02" -> "two", "VIP 3" -> "three")
+        function getTableNumberEnglish(roomName) {
+            const matches = roomName.match(/\d+/g);
+            if (!matches) return roomName;
+            const num = parseInt(matches[matches.length - 1], 10);
+            const words = {
+                1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
+                6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten',
+                11: 'eleven', 12: 'twelve', 13: 'thirteen', 14: 'fourteen', 15: 'fifteen',
+                16: 'sixteen', 17: 'seventeen', 18: 'eighteen', 19: 'nineteen', 20: 'twenty'
+            };
+            return words[num] || num.toString();
+        }
+
+        // Kiểm tra định kỳ đơn online mới để báo "Order online new"
         let lastOnlineOrderCount = -1;
         async function checkOnlineOrdersNotification() {
             try {
@@ -295,7 +309,7 @@
                 console.error("Lỗi kiểm tra đơn online", e);
             }
         }
-        setInterval(checkOnlineOrdersNotification, 15000); // Kiểm tra mỗi 15 giây
+        setInterval(checkOnlineOrdersNotification, 15000);
 
         async function init() {
             const resSet = await fetch('/api/settings');
@@ -508,12 +522,13 @@
             const room_id = document.getElementById('a-room-id').value;
             const item_id = document.getElementById('menu-select').value;
             const quantity = document.getElementById('menu-qty').value;
-            const roomName = document.getElementById('a-room-name').innerText; // Lấy tên bàn hiện tại
+            const roomName = document.getElementById('a-room-name').innerText; 
 
             const res = await fetch('/api/orders', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_id, item_id, quantity }) });
             if (res.ok) {
-                // Phát âm thanh "Table + số bàn" khi thêm món thành công
-                speakText(`Table ${roomName}`);
+                // Đọc dạng: "order table two", "order table three"...
+                const numEng = getTableNumberEnglish(roomName);
+                speakText(`order table ${numEng}`);
                 loadOrders(room_id);
             }
         }
@@ -561,7 +576,7 @@
         async function confirmPaidAndClose() {
             if (!currentCheckoutRoomId) return;
             const payment_method = document.querySelector('input[name="paymentMethod"]:checked') ? document.querySelector('input[name="paymentMethod"]:checked').value : 'Tiền mặt';
-            const roomName = document.getElementById('bill-room').innerText; // Lấy tên bàn trên bill
+            const roomName = document.getElementById('bill-room').innerText; 
 
             const res = await fetch('/api/rooms/confirm-paid', { 
                 method: 'POST', 
@@ -570,13 +585,14 @@
             });
             const data = await res.json();
             if(data.success) {
-                // Phát âm thanh xác thực thành công: "Successed table + số bàn"
-                speakText(`Successed table ${roomName}`);
+                // Đọc dạng: "Successed table one", "Successed table two"...
+                const numEng = getTableNumberEnglish(roomName);
+                speakText(`Successed table ${numEng}`);
 
                 alert('Đã xác nhận thanh toán thành công, bàn đã chuyển về trạng thái trống!');
                 setTimeout(() => {
                     location.reload();
-                }, 1500); // Chờ 1.5 giây để âm thanh đọc xong trước khi load lại
+                }, 1500);
             } else {
                 alert(data.error || 'Có lỗi xảy ra.');
             }
