@@ -15,23 +15,23 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Lưu io vào app để dùng trong các router
-app.set('io', io);
-
-// Kết nối PostgreSQL
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres.zvqmptcxkmoxkkrpepbk:%5BDIepNN%402024%5D@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres',
     ssl: { rejectUnauthorized: false },
     family: 4
 });
 
-// ... (Giữ nguyên phần initDB() và các hàm khởi tạo bảng dữ liệu như cũ) ...
+// Khởi tạo DB (giữ nguyên cấu trúc cũ của bạn)[cite: 3]
+async function initDB() {
+    // ... (Giữ nguyên toàn bộ logic initDB() hiện tại của bạn)
+}
+initDB();
 
 io.on('connection', (socket) => {
     console.log('Một thiết bị đã kết nối Realtime WebSocket');
 });
 
-// 1. Khi thêm món tại bàn -> Gửi sự kiện order_added cho tất cả các máy
+// Khi thêm món tại bàn -> Gửi tên bàn cho toàn bộ máy
 const handleAddOrder = (req, res) => {
     const { room_id, item_id, quantity } = req.body;
     pool.query(`SELECT price FROM menu WHERE id = $1`, [item_id], (err, result) => {
@@ -43,7 +43,6 @@ const handleAddOrder = (req, res) => {
         pool.query(`INSERT INTO orders (room_id, item_id, quantity, total_price) VALUES ($1, $2, $3, $4)`, [room_id, item_id, quantity, total_price], (err2) => {
             if (err2) return res.status(500).json({ error: err2.message });
             
-            // Lấy tên bàn và broadcast âm thanh tới toàn bộ máy
             pool.query(`SELECT room_name FROM rooms WHERE id = $1`, [room_id], (err3, roomRes) => {
                 if (!err3 && roomRes.rows[0]) {
                     io.emit('order_added', { roomName: roomRes.rows[0].room_name });
@@ -58,11 +57,11 @@ const handleAddOrder = (req, res) => {
 app.post('/api/orders', handleAddOrder);
 app.post('/api/orders/add', handleAddOrder);
 
-// 2. Khi có đơn hàng Online mới -> Gửi sự kiện online_order_new cho tất cả các máy
+// Khi có đơn hàng online mới -> Báo "có đơn hàng online"
 app.post('/api/online-orders/submit', (req, res) => {
     const { customer_name, customer_phone, delivery_address, items } = req.body;
     if (!customer_name || !customer_phone || !delivery_address || !items || items.length === 0) {
-        return res.status(400).json({ error: 'Vui lòng điền đầy đủ thông tin giao hàng và chọn món!' });
+        return res.status(400).json({ error: 'Vui lòng điền đầy đủ thông tin!' });
     }
 
     const goods_total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -72,14 +71,12 @@ app.post('/api/online-orders/submit', (req, res) => {
         [customer_name, customer_phone, delivery_address, JSON.stringify(items), goods_total, goods_total, currentDate], (err, result) => {
             if (err) return res.status(500).json({ error: 'Lỗi lưu đơn hàng' });
             
-            // Broadcast âm thanh đơn online mới tới tất cả các máy
             io.emit('online_order_new');
-
             res.json({ success: true, orderId: result.rows[0].id });
         });
 });
 
-// 3. Khi xác thực thanh toán thành công tại bàn -> Gửi sự kiện room_paid cho tất cả các máy
+// Khi xác thực thanh toán thành công -> Báo "đã thanh toán bàn..."
 app.post('/api/rooms/confirm-paid', (req, res) => {
     const { room_id, payment_method } = req.body;
     const method = payment_method || 'Tiền mặt';
@@ -115,9 +112,7 @@ app.post('/api/rooms/confirm-paid', (req, res) => {
                     await pool.query(`UPDATE rooms SET status = 'Trống', customer_name = NULL WHERE id = $1`, [room_id]);
                     await pool.query(`DELETE FROM orders WHERE room_id = $1`, [room_id]);
 
-                    // Broadcast sự kiện thanh toán thành công tới toàn bộ các máy
                     io.emit('room_paid', { roomName: roomName });
-
                     res.json({ success: true });
                 } catch (errDb) {
                     res.status(500).json({ error: errDb.message });
@@ -127,9 +122,7 @@ app.post('/api/rooms/confirm-paid', (req, res) => {
     });
 });
 
-// ... (Giữ nguyên các API còn lại ở dưới) ...
-
-// Thay app.listen thành server.listen để kích hoạt WebSocket
+// Giữ lại các API khác của bạn...
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
